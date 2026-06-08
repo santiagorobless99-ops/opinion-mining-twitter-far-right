@@ -85,5 +85,6 @@ Configure target accounts, keywords, and file paths in the `Config` class at the
 ## Authors
 
 Santiago Robles — PhD Candidate, Sociology, Universitat de València 
+
 Ignacio Lezica Cabrera — PhD, Social Sciences, Universitat de València 
 Contact: santiagorobless99@gmail.com
