@@ -4,8 +4,8 @@ import os
 import sys
 from pathlib import Path
 
-# Chequeo rápido de integridad — ejecutar después del pipeline para verificar
-# que los archivos de salida existen y sus dimensiones son consistentes.
+# Quick sanity check — run this after the pipeline to verify
+# that output files exist and their shapes are consistent.
 sys.stdout.reconfigure(line_buffering=True)
 
 base_path = Path(__file__).parent

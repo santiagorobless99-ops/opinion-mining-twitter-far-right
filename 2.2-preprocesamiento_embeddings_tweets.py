@@ -1,7 +1,7 @@
 """
-Preprocesamiento de tweets de X optimizado para embeddings.
+Preprocessing tweets from X for sentence embeddings.
 
-Supone como entrada el CSV generado por el script de scrapping, con al menos:
+Expects the CSV produced by the scraping script, with at least:
 - source_type
 - source_query
 - tweet_id
@@ -16,36 +16,35 @@ Supone como entrada el CSV generado por el script de scrapping, con al menos:
 - fecha_descarga
 - estado_descarga
 
-Salida: un CSV con los mismos metadatos + una columna 'texto_clean'
-lista para usar con modelos de embeddings.
+Output: same metadata + a 'texto_clean' column ready for embedding models.
 """
 
 import pandas as pd
 import re
 from langdetect import detect, LangDetectException
 
-# ========= CONFIGURACIÓN BÁSICA =========
+# ========= CONFIG =========
 
-INPUT_FILE = "tweets_scrapping_crudo.csv"       # CSV del scrapping
-OUTPUT_FILE = "tweets_para_embeddings.csv"       # CSV de salida
+INPUT_FILE = "tweets_scrapping_crudo.csv"       # input CSV from scraping step
+OUTPUT_FILE = "tweets_para_embeddings.csv"       # output CSV
 
-TEXT_COL = "texto"                  # columna con el tweet original
-STATUS_COL = "estado_descarga"      # columna con el estado de la descarga
+TEXT_COL = "texto"                  # column with the original tweet text
+STATUS_COL = "estado_descarga"      # column with download status
 
-# Filtros de calidad para el texto a embedder
-MIN_CHAR_LEN = 10                   # longitud mínima en caracteres
-MIN_WORDS = 2                       # número mínimo de palabras
+# Quality filters for the text to embed
+MIN_CHAR_LEN = 10                   # minimum character length
+MIN_WORDS = 2                       # minimum word count
 
-# Filtro de idioma (recomendado si solo quieres español)
+# Language filter — set to False for multilingual corpora
 USAR_FILTRO_IDIOMA = True
-IDIOMA_OBJETIVO = "es"              # 'es' para castellano
+IDIOMA_OBJETIVO = "es"              # 'es' for Spanish
 
 
-# ========= FUNCIONES =========
+# ========= FUNCTIONS =========
 
 def cargar_datos():
-    """Lee el CSV original y devuelve un DataFrame."""
-    print(f"Leyendo archivo de entrada: {INPUT_FILE}")
+    """Reads the raw CSV and returns a DataFrame."""
+    print(f"Reading: {INPUT_FILE}")
     df = pd.read_csv(
         INPUT_FILE,
         sep=";",
@@ -55,33 +54,29 @@ def cargar_datos():
 
     if TEXT_COL not in df.columns:
         raise ValueError(
-            f"No se encuentra la columna de texto '{TEXT_COL}'. "
-            f"Columnas disponibles: {list(df.columns)}"
+            f"Text column '{TEXT_COL}' not found. "
+            f"Available: {list(df.columns)}"
         )
 
     if STATUS_COL not in df.columns:
         raise ValueError(
-            f"No se encuentra la columna de estado '{STATUS_COL}'. "
-            f"Columnas disponibles: {list(df.columns)}"
+            f"Status column '{STATUS_COL}' not found. "
+            f"Available: {list(df.columns)}"
         )
 
-    print(f"Filas totales cargadas: {len(df)}")
+    print(f"Rows loaded: {len(df)}")
     return df
 
 
 def limpiar_texto_para_embeddings(texto):
     """
-    Limpieza mínima pensada para embeddings:
-    - Asegura que es string.
-    - Elimina saltos de línea.
-    - Elimina URLs.
-    - Elimina menciones (@usuario) - específico de Twitter.
-    - Normaliza espacios.
-    - Pasa a minúsculas.
+    Minimal cleaning for embeddings:
+    - Ensures input is a string.
+    - Removes line breaks, URLs, and mentions (@user).
+    - Normalizes whitespace and lowercases.
 
-    IMPORTANTE: NO eliminamos signos de puntuación ni emojis,
-    porque pueden aportar información semántica útil a los embeddings.
-    Conservamos hashtags sin el símbolo # porque aportan contexto.
+    Punctuation and emojis are kept — they carry semantic information.
+    Hashtag symbols are stripped but the text is preserved for context.
     """
     if not isinstance(texto, str):
         texto = str(texto)
@@ -115,8 +110,8 @@ def limpiar_texto_para_embeddings(texto):
 
 def detectar_idioma_seguro(texto):
     """
-    Detecta el idioma del texto usando langdetect.
-    Si el texto es muy corto o hay error, devuelve 'unknown'.
+    Detects language with langdetect.
+    Returns 'unknown' for short or unparseable input.
     """
     if not isinstance(texto, str):
         return "unknown"
@@ -125,63 +120,58 @@ def detectar_idioma_seguro(texto):
         return "unknown"
     try:
         return detect(texto)
-    except LangDetectException:
-        return "unknown"
-    except Exception:
-        # Cualquier otro error lo tratamos igual
+    except (LangDetectException, Exception):
         return "unknown"
 
 
 def aplicar_filtros_de_calidad(df):
     """
-    Aplica filtros mínimos de calidad al DataFrame:
-    - Filtra solo filas con estado de descarga exitoso.
-    - Elimina filas con texto NaN o vacío.
-    - Limpia el texto y lo guarda en 'texto_clean'.
-    - Filtra por longitud mínima en caracteres y palabras.
-    - (Opcional) Filtra por idioma.
+    Applies quality filters in sequence:
+    1. Keep only successfully downloaded rows
+    2. Drop NaN text
+    3. Clean text -> 'texto_clean'
+    4. Drop empty texts after cleaning
+    5. Filter by minimum length (chars and words)
+    6. Optionally filter by language
     """
-    # 1. Filtrar solo tweets descargados con éxito
+    # 1. Keep only successful downloads
     antes = len(df)
     df = df[df[STATUS_COL] == "EXITO"].copy()
-    print(f"Filtrado por estado EXITO: {len(df)} filas (descartadas {antes - len(df)})")
+    print(f"After status filter: {len(df)} rows (dropped {antes - len(df)})")
 
-    # 2. Eliminar filas con texto NaN
+    # 2. Drop NaN
     df = df.dropna(subset=[TEXT_COL])
     df = df.reset_index(drop=True)
-    print(f"Tras eliminar NaN en '{TEXT_COL}': {len(df)} filas")
+    print(f"After dropping NaN: {len(df)} rows")
 
-    # 3. Limpiar texto para embeddings
-    print("Limpiando texto para embeddings (columna 'texto_clean')...")
+    # 3. Clean
+    print("Cleaning text for embeddings...")
     df["texto_clean"] = df[TEXT_COL].apply(limpiar_texto_para_embeddings)
 
-    # 4. Eliminar textos vacíos tras la limpieza
+    # 4. Drop empties
     antes = len(df)
     df = df[df["texto_clean"].str.strip() != ""].copy()
-    print(f"Tras eliminar textos vacíos: {len(df)} filas (descartadas {antes - len(df)})")
+    print(f"After dropping empty texts: {len(df)} rows (dropped {antes - len(df)})")
 
-    # 5. Añadir métricas de longitud
+    # 5. Length filters
     df["n_chars"] = df["texto_clean"].str.len()
     df["n_words"] = df["texto_clean"].str.split().apply(len)
 
-    # 6. Filtrar por longitud mínima
     antes = len(df)
     df = df[
         (df["n_chars"] >= MIN_CHAR_LEN) &
         (df["n_words"] >= MIN_WORDS)
     ].copy()
-    print(f"Tras filtro de longitud: {len(df)} filas (descartadas {antes - len(df)})")
+    print(f"After length filter: {len(df)} rows (dropped {antes - len(df)})")
 
-    # 7. Filtro de idioma (opcional)
+    # 6. Language filter
     if USAR_FILTRO_IDIOMA:
-        print("Detectando idioma y filtrando solo tweets en español...")
+        print("Detecting language...")
         df["lang"] = df["texto_clean"].apply(detectar_idioma_seguro)
         antes = len(df)
-        df = df[df["lang"] == IDIOMA_OBJETIVO].copy()
-        df = df.reset_index(drop=True)
-        print(f"Tweets en '{IDIOMA_OBJETIVO}': {len(df)} (descartadas {antes - len(df)})")
+        df = df[df["lang"] == IDIOMA_OBJETIVO].copy().reset_index(drop=True)
+        print(f"Spanish only: {len(df)} (dropped {antes - len(df)})")
     else:
-        # Si no usamos filtro de idioma, ponemos 'lang' como 'unknown'
         df["lang"] = "unknown"
 
     return df
@@ -189,8 +179,8 @@ def aplicar_filtros_de_calidad(df):
 
 def seleccionar_columnas_salida(df):
     """
-    Selecciona las columnas que queremos conservar en el CSV final
-    para mantener trazabilidad + texto listo para embeddings.
+    Selects the columns to keep: traceability metadata + cleaned text.
+    Only includes columns that actually exist in the DataFrame.
     """
     columnas_basicas = [
         "source_type",
@@ -221,24 +211,24 @@ def seleccionar_columnas_salida(df):
 
 
 def main():
-    # 1. Cargar datos crudos
+    # 1. Load raw data
     df = cargar_datos()
 
-    # 2. Aplicar filtros de calidad y generar 'texto_clean'
+    # 2. Filter and clean
     df = aplicar_filtros_de_calidad(df)
 
-    # 3. Seleccionar columnas útiles para embeddings
+    # 3. Select output columns
     df_salida = seleccionar_columnas_salida(df)
 
-    # 4. Guardar resultado
-    print(f"Guardando corpus preprocesado para embeddings en: {OUTPUT_FILE}")
+    # 4. Save
+    print(f"Saving to: {OUTPUT_FILE}")
     df_salida.to_csv(
         OUTPUT_FILE,
         sep=";",
         encoding="utf-8",
         index=False
     )
-    print("¡Listo! Corpus de tweets optimizado para embeddings guardado.")
+    print("Done.")
 
 
 if __name__ == "__main__":

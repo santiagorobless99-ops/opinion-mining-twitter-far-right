@@ -1,15 +1,12 @@
 """
-Generación de embeddings para tweets de X.
+Generates sentence embeddings for the X/Twitter corpus.
 
-Entrada:
-    - tweets_para_embeddings.csv
-        (debe contener al menos la columna 'texto_clean')
+Input:
+    - tweets_para_embeddings.csv  (needs at least a 'texto_clean' column)
 
-Salida:
-    - embeddings_tweets.npy
-        -> matriz NumPy (n_tweets x dim_embedding)
-    - tweets_index_embeddings.csv
-        -> CSV con índices y metadatos para mapear cada fila de embeddings
+Output:
+    - embeddings_tweets.npy          — NumPy matrix (n_tweets x embedding_dim)
+    - tweets_index_embeddings.csv    — metadata aligned to each row of the matrix
 """
 
 import pandas as pd
@@ -28,45 +25,44 @@ OUTPUT_INDEX = "tweets_index_embeddings.csv"        # metadatos + índice
 
 def cargar_corpus(path: str, text_col: str) -> pd.DataFrame:
     """
-    Carga el CSV y comprueba que la columna de texto existe.
-    Devuelve un DataFrame con un índice limpio (0..n-1).
+    Loads the CSV and checks the text column exists.
+    Returns a clean DataFrame with a 0-based index.
     """
-    print(f"Leyendo corpus desde: {path}")
+    print(f"Reading corpus from: {path}")
     df = pd.read_csv(path, sep=";", encoding="utf-8", engine="python")
 
     if text_col not in df.columns:
         raise ValueError(
-            f"La columna de texto '{text_col}' no está en el CSV. "
-            f"Columnas disponibles: {list(df.columns)}"
+            f"Column '{text_col}' not found. Available: {list(df.columns)}"
         )
 
-    # Eliminamos filas con texto vacío por seguridad (debería haber 0)
+    # There should be no NaN here after preprocessing, but just in case
     df = df.dropna(subset=[text_col])
     df[text_col] = df[text_col].astype(str).str.strip()
     df = df[df[text_col] != ""].copy()
 
     df = df.reset_index(drop=True)
-    print(f"Número de tweets cargados: {len(df)}")
+    print(f"Tweets loaded: {len(df)}")
     return df
 
 
 def cargar_modelo(model_name: str) -> SentenceTransformer:
     """
-    Carga el modelo de sentence-transformers.
-    Si es la primera vez, lo descargará de internet.
+    Loads the sentence-transformers model.
+    First run will download it from HuggingFace.
     """
-    print(f"Cargando modelo de embeddings: {model_name}")
+    print(f"Loading model: {model_name}")
     model = SentenceTransformer(model_name)
-    print("Modelo cargado correctamente.")
+    print("Model loaded.")
     return model
 
 
 def generar_embeddings(model: SentenceTransformer, textos: list) -> np.ndarray:
     """
-    Genera embeddings para una lista de textos.
-    Devuelve una matriz NumPy de shape (n_textos, dim_embedding).
+    Encodes the text list into a normalized embedding matrix.
+    I normalize to unit norm so cosine similarity reduces to dot product.
     """
-    print(f"Generando embeddings para {len(textos)} textos...")
+    print(f"Generating embeddings for {len(textos)} texts...")
     embeddings = model.encode(
         textos,
         batch_size=64,           # puedes ajustar el tamaño de batch si quieres
@@ -74,23 +70,22 @@ def generar_embeddings(model: SentenceTransformer, textos: list) -> np.ndarray:
         convert_to_numpy=True,
         normalize_embeddings=True  # normaliza a norma 1 (útil para similitud coseno)
     )
-    print("Embeddings generados.")
-    print(f"Shape de la matriz de embeddings: {embeddings.shape}")
+    print("Embeddings generated.")
+    print(f"Embedding matrix shape: {embeddings.shape}")
     return embeddings
 
 
 def guardar_resultados(df: pd.DataFrame, embeddings: np.ndarray,
                        path_embeddings: str, path_index: str):
     """
-    Guarda:
-    - la matriz de embeddings en .npy
-    - un CSV con índice y metadatos para saber qué tweet corresponde a cada fila.
+    Saves:
+    - the embedding matrix as .npy
+    - a metadata CSV with one row per embedding (aligned by index)
     """
-    print(f"Guardando matriz de embeddings en: {path_embeddings}")
+    print(f"Saving embeddings to: {path_embeddings}")
     np.save(path_embeddings, embeddings)
 
-    # Creamos un DataFrame índice con metadatos útiles
-    # (puedes añadir/quitar columnas según te interese)
+    # Metadata columns to keep alongside the embeddings
     columnas_index = [
         "source_type",
         "source_query",
@@ -112,31 +107,29 @@ def guardar_resultados(df: pd.DataFrame, embeddings: np.ndarray,
     df_index = df[columnas_presentes].copy()
     df_index.insert(0, "embedding_idx", range(len(df_index)))
 
-    print(f"Guardando índice de tweets en: {path_index}")
+    print(f"Saving index to: {path_index}")
     df_index.to_csv(path_index, sep=";", encoding="utf-8", index=False)
 
-    print("Resultados guardados correctamente.")
-    print(f"- embeddings_tweets.npy -> shape {embeddings.shape}")
-    print(f"- tweets_index_embeddings.csv -> {len(df_index)} filas")
+    print(f"Done. embeddings_tweets.npy -> {embeddings.shape}, index -> {len(df_index)} rows")
 
 
 def main():
-    # 1. Cargar tweets preprocesados
+    # 1. Load preprocessed tweets
     df = cargar_corpus(INPUT_FILE, TEXT_COLUMN)
 
-    # 2. Cargar modelo de embeddings
+    # 2. Load embedding model
     model = cargar_modelo(MODEL_NAME)
 
-    # 3. Generar embeddings a partir de la columna de texto limpia
+    # 3. Generate embeddings
     textos = df[TEXT_COLUMN].tolist()
     embeddings = generar_embeddings(model, textos)
 
-    # 4. Guardar resultados (matriz + índice)
+    # 4. Save results (matrix + index)
     guardar_resultados(df, embeddings, OUTPUT_EMBEDDINGS, OUTPUT_INDEX)
 
-    print("\n--- Proceso completado ---")
-    print(f"Embeddings disponibles en: {OUTPUT_EMBEDDINGS}")
-    print(f"Índice de tweets en: {OUTPUT_INDEX}")
+    print("\n--- Done ---")
+    print(f"Embeddings: {OUTPUT_EMBEDDINGS}")
+    print(f"Index: {OUTPUT_INDEX}")
 
 
 if __name__ == "__main__":

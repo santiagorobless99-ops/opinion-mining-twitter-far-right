@@ -1,63 +1,56 @@
 """
-Scrapping de tweets de X (Twitter).
+Scraping tweets from X (Twitter).
 
-NOTA: Este script requiere credenciales de la API de X (Twitter).
-Para obtenerlas, visita: https://developer.twitter.com/
+Requires X (Twitter) API credentials.
+Get them at: https://developer.twitter.com/
 
-Salida: CSV con tweets y metadatos similares al scrapping de YouTube.
+Output: CSV with tweets and metadata compatible with the YouTube scraping schema.
 """
 
 import tweepy
 import csv
 from datetime import datetime
 
-# === CONFIGURA AQUÍ TUS CREDENCIALES DE LA API DE X ===
-# NOTA CIENTÍFICA: En un entorno de producción o publicación,
-# estas credenciales deberían cargarse desde variables de entorno (.env) o un archivo seguro.
+# === API CREDENTIALS ===
+# Load X_BEARER_TOKEN from a .env file in this directory.
+# Get one at: https://developer.twitter.com/
 
-# Credenciales para OAuth 2.0 (App-Only)
-BEARER_TOKEN = "TU_BEARER_TOKEN_AQUI"
+BEARER_TOKEN = "YOUR_BEARER_TOKEN_HERE"
 
-# Lista de usuarios de los que queremos obtener tweets
-# O bien, términos de búsqueda para buscar tweets
+# Accounts to download tweets from
 USERNAMES = [
-    # Añade aquí los usernames de las cuentas que quieras analizar
-    # "usuario1",
-    # "usuario2",
+    # "username1",
+    # "username2",
 ]
 
-# Términos de búsqueda (alternativa a buscar por usuario)
+# Search queries (alternative to user-based retrieval)
 SEARCH_QUERIES = [
     # "universidad privada",
     # "universidad pública",
 ]
 
-# Archivo de salida
 OUTPUT_FILE = "tweets_scrapping_crudo.csv"
 FECHA_DESCARGA = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-# Número máximo de tweets a descargar por usuario o búsqueda
+# Maximum tweets to download per user or search query
 MAX_TWEETS_POR_QUERY = 100
 
 
 def crear_cliente():
-    """
-    Crea el cliente de Tweepy usando Bearer Token (OAuth 2.0 App-Only).
-    """
+    """Creates a Tweepy client using Bearer Token (OAuth 2.0 App-Only)."""
     cliente = tweepy.Client(bearer_token=BEARER_TOKEN, wait_on_rate_limit=True)
     return cliente
 
 
 def descargar_tweets_usuario(cliente, username: str):
     """
-    Descarga tweets de un usuario específico.
-    Devuelve una tupla: (lista de diccionarios, estado_descarga).
+    Downloads tweets from a specific user.
+    Returns a tuple: (list of dicts, download_status).
     """
     tweets = []
     estado_descarga = "EXITO"
 
     try:
-        # Primero obtenemos el ID del usuario
         user = cliente.get_user(username=username)
         if user.data is None:
             estado_descarga = "ERROR_USUARIO_NO_ENCONTRADO"
@@ -65,7 +58,6 @@ def descargar_tweets_usuario(cliente, username: str):
 
         user_id = user.data.id
 
-        # Obtenemos los tweets del usuario
         respuesta = cliente.get_users_tweets(
             id=user_id,
             max_results=MAX_TWEETS_POR_QUERY,
@@ -110,8 +102,8 @@ def descargar_tweets_usuario(cliente, username: str):
 
 def descargar_tweets_busqueda(cliente, query: str):
     """
-    Descarga tweets que coincidan con una búsqueda.
-    Devuelve una tupla: (lista de diccionarios, estado_descarga).
+    Downloads tweets matching a search query.
+    Returns a tuple: (list of dicts, download_status).
     """
     tweets = []
     estado_descarga = "EXITO"
@@ -129,7 +121,6 @@ def descargar_tweets_busqueda(cliente, query: str):
             estado_descarga = "SIN_RESULTADOS"
             return tweets, estado_descarga
 
-        # Mapear author_id a username
         users_map = {}
         if respuesta.includes and "users" in respuesta.includes:
             for user in respuesta.includes["users"]:
@@ -168,9 +159,7 @@ def descargar_tweets_busqueda(cliente, query: str):
 
 
 def guardar_csv(datos, archivo):
-    """
-    Guarda la lista de diccionarios en un CSV con separador ';'.
-    """
+    """Saves the list of dicts to a semicolon-delimited CSV."""
     with open(archivo, "w", newline="", encoding="utf-8") as f:
         campos = [
             "source_type",
@@ -203,21 +192,20 @@ def guardar_csv(datos, archivo):
 if __name__ == "__main__":
     todos_los_tweets = []
 
-    # Creamos el cliente de la API
     cliente = crear_cliente()
 
-    # Descargar tweets por usuario
+    # Download by user
     for username in USERNAMES:
-        print(f"Descargando tweets de @{username}...")
+        print(f"Downloading tweets from @{username}...")
         tweets, estado = descargar_tweets_usuario(cliente, username)
-        print(f"  -> {len(tweets)} tweets procesados. Estado: {estado}")
+        print(f"  -> {len(tweets)} tweets processed. Status: {estado}")
 
         if estado != "EXITO" and not tweets:
             todos_los_tweets.append({
                 "source_type": "user",
                 "source_query": username,
                 "tweet_id": "", "conversation_id": "", "is_reply": "",
-                "autor": "", "texto": f"NO SE PUDO DESCARGAR - {estado}",
+                "autor": "", "texto": f"DOWNLOAD FAILED - {estado}",
                 "likes": 0, "retweets": 0, "replies": 0, "fecha": "",
                 "fecha_descarga": FECHA_DESCARGA,
                 "estado_descarga": estado,
@@ -225,18 +213,18 @@ if __name__ == "__main__":
         else:
             todos_los_tweets.extend(tweets)
 
-    # Descargar tweets por búsqueda
+    # Download by search query
     for query in SEARCH_QUERIES:
-        print(f"Buscando tweets con '{query}'...")
+        print(f"Searching tweets: '{query}'...")
         tweets, estado = descargar_tweets_busqueda(cliente, query)
-        print(f"  -> {len(tweets)} tweets procesados. Estado: {estado}")
+        print(f"  -> {len(tweets)} tweets processed. Status: {estado}")
 
         if estado != "EXITO" and not tweets:
             todos_los_tweets.append({
                 "source_type": "search",
                 "source_query": query,
                 "tweet_id": "", "conversation_id": "", "is_reply": "",
-                "autor": "", "texto": f"NO SE PUDO DESCARGAR - {estado}",
+                "autor": "", "texto": f"DOWNLOAD FAILED - {estado}",
                 "likes": 0, "retweets": 0, "replies": 0, "fecha": "",
                 "fecha_descarga": FECHA_DESCARGA,
                 "estado_descarga": estado,
@@ -244,7 +232,7 @@ if __name__ == "__main__":
         else:
             todos_los_tweets.extend(tweets)
 
-    print(f"\n--- Resumen de la Ejecución ---")
-    print(f"Total tweets finales: {len(todos_los_tweets)}")
+    print(f"\n--- Execution summary ---")
+    print(f"Total tweets: {len(todos_los_tweets)}")
     guardar_csv(todos_los_tweets, OUTPUT_FILE)
-    print(f"Guardado en {OUTPUT_FILE}")
+    print(f"Saved to {OUTPUT_FILE}")

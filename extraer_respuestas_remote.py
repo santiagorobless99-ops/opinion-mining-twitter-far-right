@@ -1,11 +1,11 @@
 """
-Extractor de respuestas mediante depuración remota de Chrome.
+Reply extractor using remote Chrome debugging.
 
-Conecta a una sesión de Chrome ya abierta via puerto de depuración remota 9222,
-evitando iniciar sesión de nuevo. Guarda resultados de forma incremental para
-no perder progreso si se interrumpe la ejecución.
+Connects to an already-running Chrome session via remote debugging port 9222,
+so I don't need to log in again. Saves results incrementally to avoid losing
+progress if something breaks mid-run.
 
-Para iniciar Chrome con depuración remota:
+To start Chrome with remote debugging:
     chrome.exe --remote-debugging-port=9222 --user-data-dir="C:/chrome-debug"
 """
 
@@ -33,21 +33,21 @@ PAUSA = 3  # seconds between tweets
 # === FUNCTIONS ===
 
 def conectar_chrome():
-    """Conecta a una instancia de Chrome ya abierta en el puerto 9222."""
-    print("\nConectando a sesión de Chrome existente...")
+    """Connects to an existing Chrome instance on port 9222."""
+    print("\nConnecting to existing Chrome session...")
 
     options = Options()
     options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
 
     driver = webdriver.Chrome(options=options)
-    print("Conectado.")
+    print("Connected.")
     return driver
 
 
 def extraer_respuestas(driver, tweet_id, autor, query):
     """
-    Navega a la página de hilo de un tweet y extrae las respuestas.
-    Se incluye output de debug porque el DOM de X puede ser impredecible.
+    Navigates to a tweet's thread page and extracts replies.
+    I include some debug output because X's DOM can be unpredictable.
     """
     respuestas = []
     fecha = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -60,7 +60,7 @@ def extraer_respuestas(driver, tweet_id, autor, query):
         print(f"      [DEBUG] Title: {driver.title}")
         print(f"      [DEBUG] URL: {driver.current_url}")
 
-        # Tiempo extra para que la página renderice antes de hacer scroll
+        # Give the page extra time to render before scrolling
         time.sleep(4)
         for _ in range(3):
             driver.execute_script("window.scrollTo(0, document.body.scrollHeight);")
@@ -70,7 +70,7 @@ def extraer_respuestas(driver, tweet_id, autor, query):
         print(f"      [DEBUG] 'tweet' elements found: {len(tweets)}")
 
         if len(tweets) == 0:
-            # Diagnóstico extra si no aparece nada — ayuda a identificar problemas de renderizado
+            # Extra diagnosis if nothing shows up — helps identify rendering issues
             articles = driver.find_elements(By.TAG_NAME, 'article')
             print(f"      [DEBUG] Generic 'article' elements: {len(articles)}")
             path_check = driver.find_elements(By.XPATH, "//*[contains(text(), 'Reply')]")
@@ -128,8 +128,8 @@ def extraer_respuestas(driver, tweet_id, autor, query):
 
 def cargar_progreso():
     """
-    Carga los IDs de tweets ya procesados desde el archivo de salida.
-    Permite reanudar una ejecución sin reprocesar todo desde cero.
+    Loads parent IDs already processed from the output file.
+    This lets me resume a run without reprocessing everything.
     """
     procesados = set()
     if os.path.exists(ARCHIVO_SALIDA):
@@ -144,9 +144,8 @@ def cargar_progreso():
 
 def guardar_incremental(datos, archivo, modo='a'):
     """
-    Añade filas al CSV de salida.
-    Se escribe de forma incremental para que los resultados parciales
-    sobrevivan a interrupciones.
+    Appends rows to the output CSV.
+    I write incrementally so partial results survive interruptions.
     """
     campos = ["plataforma", "video_id", "comment_id", "parent_id", "is_reply",
               "autor", "texto", "likes", "fecha", "fecha_descarga", "estado_video"]
@@ -162,23 +161,23 @@ def guardar_incremental(datos, archivo, modo='a'):
 
 def main():
     print("\n" + "="*60)
-    print("EXTRACTOR DE RESPUESTAS (CHROME REMOTO, INCREMENTAL)")
+    print("REPLY EXTRACTOR (REMOTE CHROME, INCREMENTAL)")
     print("="*60)
 
     if not os.path.exists(ARCHIVO_ENTRADA):
-        print(f"Archivo de entrada no encontrado: {ARCHIVO_ENTRADA}")
+        print(f"Input file not found: {ARCHIVO_ENTRADA}")
         return
 
     df = pd.read_csv(ARCHIVO_ENTRADA, sep=";")
-    print(f"   {len(df)} tweets a procesar")
+    print(f"   {len(df)} tweets to process")
 
     procesados = cargar_progreso()
-    print(f"   {len(procesados)} ya procesados (se omitirán)")
+    print(f"   {len(procesados)} already processed (will skip)")
 
     try:
         driver = conectar_chrome()
     except Exception as e:
-        print(f"No se pudo conectar a Chrome: {e}")
+        print(f"Could not connect to Chrome: {e}")
         return
 
     total_resp = 0
@@ -197,18 +196,18 @@ def main():
         resp = extraer_respuestas(driver, tid, autor, query)
 
         if resp:
-            print(f"   -> {len(resp)} respuestas — guardando...")
+            print(f"   -> {len(resp)} replies — saving...")
             guardar_incremental(resp, ARCHIVO_SALIDA)
             total_resp += len(resp)
             procesados.add(tid)
         else:
-            print(f"   -> 0 respuestas")
+            print(f"   -> 0 replies")
 
         time.sleep(PAUSA + random.uniform(0, 2))
 
     print("\n" + "="*60)
-    print(f"Listo. Respuestas nuevas esta sesión: {total_resp}")
-    print(f"Archivo de salida: {ARCHIVO_SALIDA}")
+    print(f"Done. New replies this session: {total_resp}")
+    print(f"Output file: {ARCHIVO_SALIDA}")
     print("="*60)
 
 

@@ -1,9 +1,6 @@
-# Preprocesamiento de tweets para análisis de coocurrencias y redes semánticas.
-#
-# Antes de ejecutar esto es necesario instalar las dependencias en la terminal, usando en el entorno virtual con una versión...
-# ... 3.11 de Python, pues es la última compatible con Spacy. Preguntar a la IA cómo usar el venv (entorno virtual).
-# Una vez creado el entorno virtual, la ruta para ejecutar este script y que funcione es...
-# ... ".\venv\Scripts\python.exe 2.1-preprocesamiento_coocurrencias_red_tweets.py"
+# Preprocessing tweets for co-occurrence analysis and semantic networks.
+# Requires Python 3.11 (last version fully compatible with spaCy).
+# Run inside a virtualenv: .\venv\Scripts\python.exe 2.1-preprocesamiento_coocurrencias_red_tweets.py
 
 import pandas as pd
 import re
@@ -11,69 +8,51 @@ from langdetect import detect, LangDetectException
 import spacy
 from spacy.lang.es.stop_words import STOP_WORDS
 
-# === CONFIGURACIÓN BÁSICA ===
-INPUT_FILE = "tweets_scrapping_crudo.csv"      # nombre de tu CSV de entrada
-OUTPUT_FILE = "tweets_limpios_coocurrencias.csv"  # nombre del CSV de salida
-TEXT_COLUMN = "texto"                          # nombre de la columna que contiene el tweet original
+# === CONFIG ===
+INPUT_FILE = "tweets_scrapping_crudo.csv"
+OUTPUT_FILE = "tweets_limpios_coocurrencias.csv"
+TEXT_COLUMN = "texto"  # column with the original tweet text
 
 
 def cargar_datos():
-    """Lee el CSV y devuelve un DataFrame."""
-    print(f"Leyendo archivo: {INPUT_FILE}")
+    """Reads the CSV and returns a DataFrame."""
+    print(f"Reading: {INPUT_FILE}")
     df = pd.read_csv(
         INPUT_FILE,
-        sep=";",          # separador correcto
-        engine="python"   # opcional, pero robusto
+        sep=";",
+        engine="python"
     )
 
-    # Comprobamos que la columna de texto exista
     if TEXT_COLUMN not in df.columns:
-        raise ValueError(f"La columna '{TEXT_COLUMN}' no existe en el CSV. "
-                         f"Columnas disponibles: {list(df.columns)}")
+        raise ValueError(f"Column '{TEXT_COLUMN}' not found. Available: {list(df.columns)}")
 
-    # Eliminamos filas donde el texto esté vacío o sea NaN
     df = df.dropna(subset=[TEXT_COLUMN])
     df = df.reset_index(drop=True)
-    print(f"Filas cargadas: {len(df)}")
+    print(f"Rows loaded: {len(df)}")
     return df
 
 
 def limpiar_ruido(text):
     """
-    Limpia ruido básico del tweet:
-    - pasa a minúsculas
-    - elimina saltos de línea
-    - elimina URLs
-    - elimina menciones (@usuario)
-    - elimina hashtags (opcional: conserva el texto sin #)
-    - sustituye símbolos raros por espacios
+    Basic noise removal for tweets:
+    - lowercase
+    - strip newlines
+    - remove URLs and mentions (@user)
+    - strip hashtag symbol but keep the word text
+    - remove RT prefix
+    - replace non-alphanumeric chars with spaces
     """
     if not isinstance(text, str):
         text = str(text)
 
-    # minúsculas
     text = text.lower()
-
-    # quitar saltos de línea
     text = text.replace("\n", " ")
-
-    # eliminar URLs
     text = re.sub(r"http\S+", "", text)
     text = re.sub(r"www\.\S+", "", text)
-
-    # eliminar menciones (@usuario)
     text = re.sub(r"@\w+", "", text)
-
-    # eliminar hashtag pero conservar el texto (ej: #Universidad -> universidad)
     text = re.sub(r"#(\w+)", r"\1", text)
-
-    # eliminar "RT" de retweets
     text = re.sub(r"\brt\b", "", text)
-
-    # sustituir cualquier carácter que no sea letra, número o espacio por espacio
     text = re.sub(r"[^\w\sáéíóúñü]", " ", text)
-
-    # colapsar espacios múltiples
     text = re.sub(r"\s+", " ", text).strip()
 
     return text
@@ -81,10 +60,9 @@ def limpiar_ruido(text):
 
 def detectar_idioma(text):
     """
-    Devuelve el código de idioma (por ejemplo 'es', 'en', 'pt', etc.).
-    NO traduce el texto, solo intenta adivinar el idioma.
+    Returns a language code (e.g. 'es', 'en').
+    Short texts are unreliable; returns 'unknown' for fewer than 3 chars.
     """
-    # textos muy cortos son difíciles de detectar
     if not isinstance(text, str) or len(text.strip()) < 3:
         return "unknown"
     try:
@@ -95,19 +73,19 @@ def detectar_idioma(text):
 
 def procesar_con_spacy(df):
     """
-    Aplica spaCy a la columna 'clean' para obtener:
-    - tokens (todas las palabras)
-    - lemmas (formas base)
-    - tokens_no_stop (lemmas sin stopwords, solo letras)
+    Runs spaCy on the 'clean' column to produce:
+    - tokens (all words)
+    - lemmas (base forms)
+    - tokens_no_stop (lemmas without stopwords, alphabetic only)
     """
-    print("Cargando modelo de spaCy para español (es_core_news_sm)...")
+    print("Loading spaCy model (es_core_news_sm)...")
     nlp = spacy.load("es_core_news_sm")
 
     tokens_list = []
     lemmas_list = []
     tokens_no_stop_list = []
 
-    print("Procesando texto con spaCy (puede tardar un poco)...")
+    print("Processing with spaCy (this may take a moment)...")
 
     for doc in nlp.pipe(df["clean"].tolist(), batch_size=50):
         tokens = []
@@ -121,7 +99,7 @@ def procesar_con_spacy(df):
             tokens.append(token.text)
             lemmas.append(token.lemma_)
 
-            # nos quedamos solo con lemmas, sin stopwords, solo letras
+            # Keep only lemmas that are not stopwords and consist of letters
             if (not token.is_stop) and token.is_alpha:
                 tokens_no_stop.append(token.lemma_.lower())
 
@@ -133,7 +111,7 @@ def procesar_con_spacy(df):
     df["lemmas"] = lemmas_list
     df["tokens_no_stop"] = tokens_no_stop_list
 
-    # Para guardar en CSV, convertimos las listas en cadenas separadas por espacios
+    # Store as space-separated strings for CSV compatibility
     df["tokens_str"] = df["tokens"].apply(lambda toks: " ".join(toks))
     df["lemmas_str"] = df["lemmas"].apply(lambda toks: " ".join(toks))
     df["tokens_no_stop_str"] = df["tokens_no_stop"].apply(lambda toks: " ".join(toks))
@@ -142,37 +120,36 @@ def procesar_con_spacy(df):
 
 
 def main():
-    # 1. Cargar datos
+    # 1. Load data
     df = cargar_datos()
 
-    # 2. Crear columna 'clean' con texto normalizado y sin ruido técnico
-    print("Limpiando ruido del texto...")
+    # 2. Clean noise
+    print("Cleaning text...")
     df["clean"] = df[TEXT_COLUMN].apply(limpiar_ruido)
 
-    # 3. Detectar idioma
-    print("Detectando idioma de los tweets...")
+    # 3. Detect language
+    print("Detecting language...")
     df["lang"] = df["clean"].apply(detectar_idioma)
 
-    # 4. Filtrar solo español
+    # 4. Keep only Spanish tweets
     antes = len(df)
     df = df[df["lang"] == "es"].reset_index(drop=True)
-    despues = len(df)
-    print(f"Tweets en español: {despues} (descartados {antes - despues})")
+    print(f"Spanish tweets: {len(df)} (discarded {antes - len(df)})")
 
-    # 5. Procesar con spaCy (tokenización, lematización, stopwords)
+    # 5. Tokenize and lemmatize with spaCy
     df = procesar_con_spacy(df)
 
-    # 6. Guardar resultado
+    # 6. Save
     columnas_a_guardar = [
-        TEXT_COLUMN,         # texto original
-        "clean",             # texto limpio
-        "lang",              # idioma detectado
-        "tokens_str",        # tokens
-        "lemmas_str",        # lemas
-        "tokens_no_stop_str" # lemas sin stopwords
+        TEXT_COLUMN,
+        "clean",
+        "lang",
+        "tokens_str",
+        "lemmas_str",
+        "tokens_no_stop_str"
     ]
 
-    print(f"Guardando CSV limpio en: {OUTPUT_FILE}")
+    print(f"Saving to: {OUTPUT_FILE}")
     df.to_csv(
         OUTPUT_FILE,
         index=False,
@@ -180,7 +157,7 @@ def main():
         columns=columnas_a_guardar,
         sep=";"
     )
-    print("¡Listo! Corpus de tweets preprocesado guardado.")
+    print("Done.")
 
 
 if __name__ == "__main__":

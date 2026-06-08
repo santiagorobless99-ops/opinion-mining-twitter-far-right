@@ -203,7 +203,6 @@ def _descargar_tweets_usuario_keyword(cliente, username, keyword, fecha_descarga
     estado = "EXITO"
     
     try:
-        # Buscar tweets del usuario que contengan la keyword
         query = f"from:{username} {keyword} -is:retweet"
         
         respuesta = cliente.search_recent_tweets(
@@ -285,9 +284,8 @@ def _descargar_tweets_busqueda(cliente, query, fecha_descarga, tweepy):
     estado = "EXITO"
     
     try:
-        # Buscar tweets que coincidan con la query
         respuesta = cliente.search_recent_tweets(
-            query=f"{query} -is:retweet",  # Excluir retweets
+            query=f"{query} -is:retweet",
             max_results=Config.MAX_TWEETS_POR_QUERY,
             tweet_fields=["created_at", "public_metrics", "author_id", "conversation_id", "in_reply_to_user_id"],
             expansions=["author_id"],
@@ -335,7 +333,6 @@ def _descargar_replies(cliente, conversation_id, query_original, fecha_descarga,
     replies = []
     
     try:
-        # Buscar respuestas en la conversación
         respuesta = cliente.search_recent_tweets(
             query=f"conversation_id:{conversation_id} is:reply",
             max_results=100,
@@ -418,10 +415,10 @@ def _guardar_csv_scrapping(datos, archivo):
         escritor.writerows(datos)
 
 
-# ==================== PASO 2: PREPROCESAMIENTO ====================
+# === STEP 2: PREPROCESSING ===
 
 def ejecutar_preprocesamiento():
-    """Preprocesa los tweets para análisis."""
+    """Preprocesses tweets for downstream analysis."""
     pd = importar_pandas()
     detect, LangDetectException = importar_langdetect()
     spacy = importar_spacy()
@@ -501,7 +498,7 @@ def _limpiar_texto_coocurrencias(text):
 
 
 def _limpiar_texto_embeddings(text):
-    """Limpieza ligera para embeddings (conserva emojis/puntuación)."""
+    """Light cleaning for embeddings — keeps emojis and punctuation."""
     if not isinstance(text, str):
         text = str(text)
     text = text.strip()
@@ -601,7 +598,7 @@ def ejecutar_coocurrencias():
     cooc_df = cooc_df.sort_values(by=["keyword", "cooc_freq"], ascending=[True, False])
     cooc_df.to_csv(Config.ARCHIVO_COOCURRENCIAS, sep=";", index=False, encoding="utf-8")
     
-    print(f"   ✅ Guardado: {Config.ARCHIVO_COOCURRENCIAS}")
+    print(f"   Saved: {Config.ARCHIVO_COOCURRENCIAS}")
     
     # Print top results per keyword
     print("\nTOP CO-OCCURRENCES:")
