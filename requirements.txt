@@ -1,0 +1,11 @@
+tweepy>=4.14.0
+pandas>=2.0.0
+spacy>=3.7.0
+langdetect>=1.0.9
+sentence-transformers>=2.7.0
+numpy>=1.26.0
+python-dotenv>=1.0.0
+selenium>=4.20.0
+
+# After installing, download the Spanish spaCy model:
+# python -m spacy download es_core_news_sm
