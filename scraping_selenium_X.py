@@ -1,10 +1,10 @@
 """
-Selenium-based Twitter/X scraper.
+Scraper de Twitter/X basado en Selenium.
 
-I use this as a fallback when the API doesn't cover the time window I need
-(e.g., tweets older than the 7-day free tier limit). Requires manual login.
+Alternativa al scraping por API cuando la ventana temporal requerida supera
+el límite del plan gratuito (ej. tweets de más de 7 días). Requiere login manual.
 
-Usage:
+Uso:
     python scraping_selenium_X.py
 """
 
@@ -53,8 +53,8 @@ class Config:
 # === FUNCTIONS ===
 
 def iniciar_navegador():
-    """Launches Chrome with basic options."""
-    print("\nStarting browser...")
+    """Inicia Chrome con opciones básicas."""
+    print("\nIniciando navegador...")
 
     chrome_options = Options()
     chrome_options.add_argument("--disable-notifications")
@@ -67,17 +67,17 @@ def iniciar_navegador():
 
 
 def esperar_login(driver):
-    """Opens X login page and waits for manual login."""
+    """Abre la página de login de X y espera al login manual."""
     print("\n" + "="*60)
-    print("MANUAL LOGIN REQUIRED")
+    print("SE REQUIERE LOGIN MANUAL")
     print("="*60)
 
     driver.get("https://twitter.com/login")
 
     print("""
-    1. Log in to X in the browser window
-    2. Complete any verification it asks for
-    3. Once you're on the X feed, come back here
+    1. Inicia sesión en X en la ventana del navegador
+    2. Completa cualquier verificación que pida
+    3. Cuando estés en el feed de X, vuelve aquí
     """)
 
     input("   >>> Press ENTER when login is complete... <<<")
@@ -93,7 +93,7 @@ def esperar_login(driver):
 
 
 def buscar_tweets(driver, username, keyword):
-    """Searches tweets from a user containing a keyword, then fetches replies."""
+    """Busca tweets de un usuario que contengan una keyword y luego obtiene sus respuestas."""
     tweets_encontrados = []
     tweet_urls = []
 
@@ -153,7 +153,7 @@ def buscar_tweets(driver, username, keyword):
 
 
 def extraer_respuestas(driver, tweet_url, username, keyword):
-    """Extracts replies from a tweet's thread page."""
+    """Extrae las respuestas de la página de hilo de un tweet."""
     respuestas = []
 
     try:
@@ -181,7 +181,7 @@ def extraer_respuestas(driver, tweet_url, username, keyword):
 
 
 def extraer_datos_tweet(tweet_element, username, keyword, is_reply=False):
-    """Parses a tweet DOM element into a flat dict."""
+    """Parsea un elemento DOM de tweet en un diccionario plano."""
     try:
         fecha_descarga = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
@@ -240,7 +240,7 @@ def extraer_datos_tweet(tweet_element, username, keyword, is_reply=False):
 
 
 def guardar_csv(tweets, archivo):
-    """Saves tweets to a semicolon-delimited CSV."""
+    """Guarda los tweets en un CSV delimitado por punto y coma."""
     campos = [
         "plataforma", "video_id", "comment_id", "parent_id", "is_reply",
         "autor", "texto", "likes", "fecha", "fecha_descarga", "estado_video",
@@ -254,7 +254,7 @@ def guardar_csv(tweets, archivo):
 
 def main():
     print("\n" + "="*60)
-    print("SELENIUM TWITTER SCRAPER")
+    print("SCRAPER SELENIUM TWITTER/X")
     print("="*60)
 
     driver = iniciar_navegador()
@@ -291,11 +291,11 @@ def main():
         guardar_csv(todos_los_tweets, Config.ARCHIVO_SALIDA)
 
         print("\n" + "="*60)
-        print(f"Done. {len(todos_los_tweets)} unique tweets saved to {Config.ARCHIVO_SALIDA}")
+        print(f"Listo. {len(todos_los_tweets)} tweets únicos guardados en {Config.ARCHIVO_SALIDA}")
         print("="*60)
 
     finally:
-        print("\nClosing browser...")
+        print("\nCerrando navegador...")
         try:
             driver.quit()
         except Exception:

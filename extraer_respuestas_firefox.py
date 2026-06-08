@@ -1,11 +1,11 @@
 """
-Reply extractor using Firefox (anti-detection mode).
+Extractor de respuestas usando Firefox (modo anti-detección).
 
-Reads an existing scraped tweets CSV and fetches the replies
-for each tweet by navigating to its thread page.
-I use Firefox here because its webdriver is slightly harder to detect than Chrome's.
+Lee el CSV de tweets ya scrapeados y obtiene las respuestas de cada tweet
+navegando a su página de hilo. Se usa Firefox porque su webdriver es
+ligeramente más difícil de detectar que el de Chrome.
 
-Usage:
+Uso:
     python extraer_respuestas_firefox.py
 """
 
@@ -37,8 +37,8 @@ class Config:
 # === FUNCTIONS ===
 
 def iniciar_firefox():
-    """Launches Firefox with anti-detection settings."""
-    print("\nStarting Firefox (anti-detection mode)...")
+    """Inicia Firefox con configuración anti-detección."""
+    print("\nIniciando Firefox (modo anti-detección)...")
 
     options = Options()
 
@@ -60,16 +60,16 @@ def iniciar_firefox():
 
 
 def esperar_login(driver):
-    """Waits for manual login."""
+    """Espera a que el usuario complete el login manual."""
     print("\n" + "="*60)
-    print("MANUAL LOGIN REQUIRED")
+    print("SE REQUIERE LOGIN MANUAL")
     print("="*60)
 
     driver.get("https://twitter.com/login")
 
     print("""
-    1. Log in to X in the Firefox window
-    2. Once you're on the feed, come back here
+    1. Inicia sesión en X en la ventana de Firefox
+    2. Cuando estés en el feed, vuelve aquí
     """)
 
     input("   >>> Press ENTER when login is complete... <<<")
@@ -78,8 +78,8 @@ def esperar_login(driver):
 
 
 def cargar_tweets_existentes():
-    """Loads the tweets CSV."""
-    print(f"\nLoading {Config.ARCHIVO_ENTRADA}...")
+    """Carga el CSV de tweets existentes."""
+    print(f"\nCargando {Config.ARCHIVO_ENTRADA}...")
     df = pd.read_csv(Config.ARCHIVO_ENTRADA, sep=";")
     print(f"   -> {len(df)} tweets loaded")
     return df
@@ -87,8 +87,8 @@ def cargar_tweets_existentes():
 
 def extraer_respuestas_tweet(driver, tweet_id, autor_original, query_original):
     """
-    Navigates to a tweet's thread page and extracts replies.
-    I skip the first element (the original tweet) and collect the rest.
+    Navega a la página de hilo de un tweet y extrae las respuestas.
+    Omite el primer elemento (el tweet original) y recoge el resto.
     """
     respuestas = []
     fecha_descarga = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -125,7 +125,7 @@ def extraer_respuestas_tweet(driver, tweet_id, autor_original, query_original):
 
 
 def extraer_datos_respuesta(tweet_element, query_original, parent_id, fecha_descarga):
-    """Parses a reply DOM element into a flat dict."""
+    """Parsea un elemento DOM de respuesta en un diccionario plano."""
     try:
         try:
             texto_el = tweet_element.find_element(By.CSS_SELECTOR, '[data-testid="tweetText"]')
@@ -184,7 +184,7 @@ def extraer_datos_respuesta(tweet_element, query_original, parent_id, fecha_desc
 
 
 def guardar_csv(tweets, archivo):
-    """Saves to semicolon-delimited CSV."""
+    """Guarda los tweets en un CSV delimitado por punto y coma."""
     campos = [
         "plataforma", "video_id", "comment_id", "parent_id", "is_reply",
         "autor", "texto", "likes", "fecha", "fecha_descarga", "estado_video",
@@ -198,7 +198,7 @@ def guardar_csv(tweets, archivo):
 
 def main():
     print("\n" + "="*60)
-    print("REPLY EXTRACTOR (FIREFOX)")
+    print("EXTRACTOR DE RESPUESTAS (FIREFOX)")
     print("="*60)
 
     df = cargar_tweets_existentes()
@@ -210,7 +210,7 @@ def main():
         todos_los_tweets = df.to_dict('records')
         total_respuestas = 0
 
-        print(f"\nFetching replies for {len(df)} tweets...")
+        print(f"\nObteniendo respuestas para {len(df)} tweets...")
 
         for i, row in enumerate(df.itertuples()):
             tweet_id = str(row.comment_id)
@@ -222,23 +222,23 @@ def main():
             respuestas = extraer_respuestas_tweet(driver, tweet_id, autor, query)
 
             if respuestas:
-                print(f"   -> {len(respuestas)} replies")
+                print(f"   -> {len(respuestas)} respuestas")
                 todos_los_tweets.extend(respuestas)
                 total_respuestas += len(respuestas)
             else:
-                print(f"   -> No replies")
+                print(f"   -> Sin respuestas")
 
             time.sleep(Config.PAUSA_ENTRE_TWEETS + random.uniform(0, 2))
 
         guardar_csv(todos_los_tweets, Config.ARCHIVO_SALIDA)
 
         print("\n" + "="*60)
-        print(f"Done. Original: {len(df)} | New replies: {total_respuestas} | Total: {len(todos_los_tweets)}")
-        print(f"Saved to: {Config.ARCHIVO_SALIDA}")
+        print(f"Listo. Originales: {len(df)} | Respuestas nuevas: {total_respuestas} | Total: {len(todos_los_tweets)}")
+        print(f"Guardado en: {Config.ARCHIVO_SALIDA}")
         print("="*60)
 
     finally:
-        print("\nClosing browser...")
+        print("\nCerrando navegador...")
         try:
             driver.quit()
         except Exception:

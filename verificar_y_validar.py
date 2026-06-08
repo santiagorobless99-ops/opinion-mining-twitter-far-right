@@ -1,39 +1,47 @@
 import numpy as np
 import pandas as pd
 import os
+import sys
+from pathlib import Path
 
-# Quick sanity check — I run this after the pipeline to verify
-# that the output files exist and their shapes are consistent.
+# Chequeo rápido de integridad — ejecutar después del pipeline para verificar
+# que los archivos de salida existen y sus dimensiones son consistentes.
+sys.stdout.reconfigure(line_buffering=True)
 
-base_path = r"c:\Users\Robles\Desktop\Opinion mining\TWITTER"
+base_path = Path(__file__).parent
 files = {
     "embeddings": "embeddings_tweets.npy",
     "final_csv": "tweets_final.csv",
+    "limpios": "tweets_limpios_coocurrencias.csv",
     "index_embeddings": "tweets_index_embeddings.csv"
 }
 
+print("CHECK_START")
 try:
-    print("--- Data verification ---")
-    emb_path = os.path.join(base_path, files["embeddings"])
-    if os.path.exists(emb_path):
-        emb = np.load(emb_path)
-        print(f"Embeddings shape: {emb.shape}")
+    if os.path.exists(base_path / files["final_csv"]):
+        df_final = pd.read_csv(base_path / files["final_csv"], delimiter=";")
+        print(f"Final_CSV_Rows: {len(df_final)}")
     else:
-        print(f"Embeddings file not found at {emb_path}")
+        print("Final_CSV: MISSING")
 
-    csv_path = os.path.join(base_path, files["final_csv"])
-    if os.path.exists(csv_path):
-        df_final = pd.read_csv(csv_path, delimiter=";")
-        print(f"Tweets final rows: {len(df_final)}")
+    if os.path.exists(base_path / files["limpios"]):
+        df_limpios = pd.read_csv(base_path / files["limpios"], delimiter=";")
+        print(f"Limpios_CSV_Rows: {len(df_limpios)}")
     else:
-        print(f"Final CSV not found at {csv_path}")
+        print("Limpios_CSV: MISSING")
 
-    index_path = os.path.join(base_path, files["index_embeddings"])
-    if os.path.exists(index_path):
-        df_index = pd.read_csv(index_path, delimiter=";")
-        print(f"Index embeddings rows: {len(df_index)}")
+    if os.path.exists(base_path / files["index_embeddings"]):
+        df_index = pd.read_csv(base_path / files["index_embeddings"], delimiter=";")
+        print(f"Index_CSV_Rows: {len(df_index)}")
     else:
-        print(f"Index embeddings not found at {index_path}")
+        print("Index_CSV: MISSING")
+
+    if os.path.exists(base_path / files["embeddings"]):
+        emb = np.load(base_path / files["embeddings"])
+        print(f"Embeddings_Shape: {emb.shape}")
+    else:
+        print("Embeddings_NPY: MISSING")
 
 except Exception as e:
-    print(f"Error: {e}")
+    print(f"ERROR: {e}")
+print("CHECK_END")
