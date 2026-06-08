@@ -82,11 +82,8 @@ Configure target accounts, keywords, and file paths in the `Config` class at the
 - The Selenium-based scraper (`scraping_selenium_X.py`) is a fallback for cases where the API does not cover the required time window.
 - Output schema is intentionally compatible with the YouTube pipeline to facilitate cross-platform analysis.
 
-## Related
+## Authors
 
-See the parent [`Opinion mining/`](../) folder for the equivalent YouTube pipeline.
-
-## Author
-
-Santiago Robles — PhD Candidate, Sociology, Universitat de València  
+Santiago Robles — PhD Candidate, Sociology, Universitat de València 
+Ignacio Lezica Cabrera — PhD, Social Sciences, Universitat de València 
 Contact: santiagorobless99@gmail.com
