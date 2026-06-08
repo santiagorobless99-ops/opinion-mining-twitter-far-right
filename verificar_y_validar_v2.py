@@ -3,7 +3,8 @@ import pandas as pd
 import os
 import sys
 
-# Flush stdout to ensure we see output
+# Flush stdout immediately — useful when running this from a batch file
+# or from an external process that pipes output.
 sys.stdout.reconfigure(line_buffering=True)
 
 base_path = r"c:\Users\Robles\Desktop\Opinion mining\TWITTER"

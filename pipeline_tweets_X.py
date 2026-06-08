@@ -1,23 +1,16 @@
 """
-=============================================================================
-PIPELINE COMPLETO DE OPINION MINING PARA TWEETS DE X (TWITTER)
-=============================================================================
+Full opinion mining pipeline for X/Twitter.
 
-Este script unificado permite:
-1. Descargar tweets de X (requiere API)
-2. Preprocesar el texto para análisis
-3. Calcular coocurrencias de palabras clave
-4. Generar embeddings con sentence-transformers
+Runs four sequential steps — scraping, preprocessing, co-occurrence analysis,
+and sentence embeddings — either individually or end-to-end.
 
-Uso:
-    python pipeline_tweets_X.py --help
+Usage:
     python pipeline_tweets_X.py --paso scrapping
     python pipeline_tweets_X.py --paso preprocesar
     python pipeline_tweets_X.py --paso coocurrencias
     python pipeline_tweets_X.py --paso embeddings
     python pipeline_tweets_X.py --paso todo
-
-=============================================================================
+    python pipeline_tweets_X.py --help
 """
 
 import argparse
@@ -32,15 +25,14 @@ from pathlib import Path
 from dotenv import load_dotenv
 load_dotenv()
 
-# ==================== DEPENDENCIAS OPCIONALES ====================
-# Se importan según el paso que se ejecute
+# I import dependencies lazily so you only need what the current step requires.
 
 def importar_pandas():
     try:
         import pandas as pd
         return pd
     except ImportError:
-        print("ERROR: Necesitas instalar pandas. Ejecuta: pip install pandas")
+        print("ERROR: pandas not found. Run: pip install pandas")
         sys.exit(1)
 
 def importar_tweepy():
@@ -48,7 +40,7 @@ def importar_tweepy():
         import tweepy
         return tweepy
     except ImportError:
-        print("ERROR: Necesitas instalar tweepy. Ejecuta: pip install tweepy")
+        print("ERROR: tweepy not found. Run: pip install tweepy")
         sys.exit(1)
 
 def importar_langdetect():
@@ -56,7 +48,7 @@ def importar_langdetect():
         from langdetect import detect, LangDetectException
         return detect, LangDetectException
     except ImportError:
-        print("ERROR: Necesitas instalar langdetect. Ejecuta: pip install langdetect")
+        print("ERROR: langdetect not found. Run: pip install langdetect")
         sys.exit(1)
 
 def importar_spacy():
@@ -64,8 +56,8 @@ def importar_spacy():
         import spacy
         return spacy
     except ImportError:
-        print("ERROR: Necesitas instalar spacy. Ejecuta: pip install spacy")
-        print("       Luego instala el modelo: python -m spacy download es_core_news_sm")
+        print("ERROR: spacy not found. Run: pip install spacy")
+        print("       Then download the model: python -m spacy download es_core_news_sm")
         sys.exit(1)
 
 def importar_sentence_transformers():
@@ -73,8 +65,7 @@ def importar_sentence_transformers():
         from sentence_transformers import SentenceTransformer
         return SentenceTransformer
     except ImportError:
-        print("ERROR: Necesitas instalar sentence-transformers.")
-        print("       Ejecuta: pip install sentence-transformers")
+        print("ERROR: sentence-transformers not found. Run: pip install sentence-transformers")
         sys.exit(1)
 
 def importar_numpy():
@@ -82,60 +73,54 @@ def importar_numpy():
         import numpy as np
         return np
     except ImportError:
-        print("ERROR: Necesitas instalar numpy. Ejecuta: pip install numpy")
+        print("ERROR: numpy not found. Run: pip install numpy")
         sys.exit(1)
 
 
-# ==================== CONFIGURACIÓN GLOBAL ====================
+# === GLOBAL CONFIG ===
 
 class Config:
-    """Configuración centralizada del pipeline."""
+    """Central configuration for the pipeline. Edit here before running."""
 
-    # === CREDENCIALES API DE X ===
-    # Crea un archivo .env en esta carpeta con el contenido:
-    #   X_BEARER_TOKEN=tu_token_aqui
-    # Obtén tu Bearer Token en: https://developer.twitter.com/
+    # Bearer token — set X_BEARER_TOKEN in a .env file in this folder.
+    # Get one at: https://developer.twitter.com/
     BEARER_TOKEN = os.getenv("X_BEARER_TOKEN", "")
-    
-    # === FUENTES DE DATOS ===
-    # Lista de usuarios de los que descargar tweets
+
+    # Accounts I'm targeting
     USERNAMES = [
         "RobertoVaquero_",  # Roberto Vaquero
         "wallstwolverine",  # Wall Street Wolverine
         "juanrallo",        # Juan Ramón Rallo
         "navedelmisterio",  # Iker Jiménez
     ]
-    
-    # Palabras clave que deben contener los tweets
+
+    # Keywords the tweets must contain — I search per user, not globally
     KEYWORDS_FILTRO = [
         "Universidad",
         "Universidad pública",
         "Universidad privada",
     ]
-    
-    # Términos de búsqueda adicionales (búsqueda general, sin filtrar por usuario)
-    SEARCH_QUERIES = [
-        # Desactivado - solo buscamos en los usuarios específicos
-    ]
-    
-    # === ARCHIVOS ===
+
+    # General search queries (disabled for now — user-filtered search is sufficient)
+    SEARCH_QUERIES = []
+
+    # Output files
     ARCHIVO_SCRAPPING = "tweets_final.csv"
     ARCHIVO_PREPROCESADO_COOC = "tweets_limpios_coocurrencias.csv"
     ARCHIVO_PREPROCESADO_EMB = "tweets_para_embeddings.csv"
     ARCHIVO_COOCURRENCIAS = "coocurrencias_tweets.csv"
     ARCHIVO_EMBEDDINGS = "embeddings_tweets.npy"
     ARCHIVO_INDEX_EMB = "tweets_index_embeddings.csv"
-    
-    # === PARÁMETROS DE SCRAPPING ===
+
     MAX_TWEETS_POR_QUERY = 100
-    
-    # === PARÁMETROS DE PREPROCESAMIENTO ===
+
+    # Preprocessing
     MIN_CHAR_LEN = 10
     MIN_WORDS = 2
     IDIOMA_OBJETIVO = "es"
     USAR_FILTRO_IDIOMA = True
-    
-    # === PALABRAS CLAVE PARA COOCURRENCIAS ===
+
+    # Theoretically motivated keywords for co-occurrence analysis
     KEYWORDS = [
         "universidad",
         "carrera",
@@ -147,57 +132,56 @@ class Config:
         "plan",
     ]
     TOP_N_COOC = 20
-    
-    # === MODELO DE EMBEDDINGS ===
+
     MODEL_NAME = "paraphrase-multilingual-MiniLM-L12-v2"
 
 
-# ==================== PASO 1: SCRAPPING ====================
+# === STEP 1: SCRAPING ===
 
 def ejecutar_scrapping():
-    """Descarga tweets de X usando la API."""
+    """Downloads tweets from X via the API (Tweepy v4, X API v2)."""
     tweepy = importar_tweepy()
-    
+
     print("\n" + "="*60)
-    print("PASO 1: SCRAPPING DE TWEETS")
+    print("STEP 1: SCRAPING")
     print("="*60)
-    
-    if Config.BEARER_TOKEN == "TU_BEARER_TOKEN_AQUI":
-        print("\n⚠️  ERROR: Debes configurar tu BEARER_TOKEN en la clase Config.")
-        print("   Obtén uno en: https://developer.twitter.com/")
+
+    if not Config.BEARER_TOKEN:
+        print("\nERROR: X_BEARER_TOKEN not set. Add it to your .env file.")
+        print("   Get one at: https://developer.twitter.com/")
         return False
-    
+
     if not Config.USERNAMES and not Config.SEARCH_QUERIES:
-        print("\n⚠️  ERROR: Debes añadir usuarios o términos de búsqueda en Config.")
+        print("\nERROR: No usernames or search queries configured.")
         return False
     
     fecha_descarga = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     cliente = tweepy.Client(bearer_token=Config.BEARER_TOKEN, wait_on_rate_limit=True)
     todos_los_tweets = []
     
-    # Descargar tweets de usuarios que contengan las palabras clave
+    # Search per user + keyword combination
     if Config.USERNAMES and Config.KEYWORDS_FILTRO:
         for username in Config.USERNAMES:
             for keyword in Config.KEYWORDS_FILTRO:
-                print(f"\n📥 Buscando tweets de @{username} con '{keyword}'...")
+                print(f"\nFetching tweets from @{username} containing '{keyword}'...")
                 tweets, estado = _descargar_tweets_usuario_keyword(cliente, username, keyword, fecha_descarga, tweepy)
-                print(f"   → {len(tweets)} tweets + respuestas. Estado: {estado}")
-                
+                print(f"   -> {len(tweets)} tweets + replies. Status: {estado}")
+
                 if tweets:
                     todos_los_tweets.extend(tweets)
-    
-    # Descargar por búsqueda general (si hay queries adicionales)
+
+    # General search queries (only runs if SEARCH_QUERIES is populated)
     for query in Config.SEARCH_QUERIES:
-        print(f"\n🔍 Buscando '{query}'...")
+        print(f"\nSearching '{query}'...")
         tweets, estado = _descargar_tweets_busqueda(cliente, query, fecha_descarga, tweepy)
-        print(f"   → {len(tweets)} tweets. Estado: {estado}")
-        
+        print(f"   -> {len(tweets)} tweets. Status: {estado}")
+
         if not tweets and estado != "EXITO":
             todos_los_tweets.append(_crear_fila_error("search", query, estado, fecha_descarga))
         else:
             todos_los_tweets.extend(tweets)
-    
-    # Eliminar duplicados por tweet_id
+
+    # Deduplicate by tweet_id
     tweets_unicos = {}
     for tweet in todos_los_tweets:
         tweet_id = tweet.get("comment_id", "")
@@ -205,17 +189,16 @@ def ejecutar_scrapping():
             tweets_unicos[tweet_id] = tweet
         elif not tweet_id:
             tweets_unicos[id(tweet)] = tweet
-    
+
     todos_los_tweets = list(tweets_unicos.values())
-    
-    # Guardar
+
     _guardar_csv_scrapping(todos_los_tweets, Config.ARCHIVO_SCRAPPING)
-    print(f"\n✅ Guardado: {Config.ARCHIVO_SCRAPPING} ({len(todos_los_tweets)} tweets únicos)")
+    print(f"\nSaved: {Config.ARCHIVO_SCRAPPING} ({len(todos_los_tweets)} unique tweets)")
     return True
 
 
 def _descargar_tweets_usuario_keyword(cliente, username, keyword, fecha_descarga, tweepy):
-    """Descarga tweets de un usuario que contengan una palabra clave + respuestas."""
+    """Downloads tweets from a user containing a keyword, then fetches replies for each."""
     tweets = []
     estado = "EXITO"
     
@@ -241,23 +224,22 @@ def _descargar_tweets_usuario_keyword(cliente, username, keyword, fecha_descarga
         
         conversation_ids = set()
         
-        # Añadir tweets originales
         for tweet in respuesta.data:
             autor = users_map.get(tweet.author_id, username)
             tweets.append(_crear_fila_tweet(tweet, "user", f"{username}:{keyword}", autor, fecha_descarga, estado))
-            
+
             if tweet.conversation_id:
                 conversation_ids.add(tweet.conversation_id)
-        
-        # Buscar respuestas a cada tweet
+
+        # Fetch replies for each conversation
         total_replies = 0
         for conv_id in conversation_ids:
             replies = _descargar_replies(cliente, conv_id, f"{username}:{keyword}", fecha_descarga, tweepy)
             tweets.extend(replies)
             total_replies += len(replies)
-        
+
         if total_replies > 0:
-            print(f"      + {total_replies} respuestas")
+            print(f"      + {total_replies} replies")
     
     except tweepy.errors.TweepyException as e:
         estado = f"ERROR_API_{type(e).__name__}"
@@ -268,7 +250,7 @@ def _descargar_tweets_usuario_keyword(cliente, username, keyword, fecha_descarga
 
 
 def _descargar_tweets_usuario(cliente, username, fecha_descarga, tweepy):
-    """Descarga tweets de un usuario."""
+    """Downloads all recent tweets from a user (no keyword filter)."""
     tweets = []
     estado = "EXITO"
     
@@ -298,7 +280,7 @@ def _descargar_tweets_usuario(cliente, username, fecha_descarga, tweepy):
 
 
 def _descargar_tweets_busqueda(cliente, query, fecha_descarga, tweepy):
-    """Descarga tweets por búsqueda Y sus respuestas."""
+    """Downloads tweets matching a general search query, plus replies."""
     tweets = []
     estado = "EXITO"
     
@@ -322,26 +304,23 @@ def _descargar_tweets_busqueda(cliente, query, fecha_descarga, tweepy):
         
         conversation_ids = set()
         
-        # Primero añadimos los tweets originales
         for tweet in respuesta.data:
             autor = users_map.get(tweet.author_id, str(tweet.author_id))
             tweets.append(_crear_fila_tweet(tweet, "search", query, autor, fecha_descarga, estado))
-            
-            # Guardamos el conversation_id para buscar respuestas
+
             if tweet.conversation_id:
                 conversation_ids.add(tweet.conversation_id)
-        
-        print(f"   → {len(tweets)} tweets originales encontrados")
-        
-        # Ahora buscamos las respuestas a cada conversación
+
+        print(f"   -> {len(tweets)} original tweets found")
+
         total_replies = 0
         for conv_id in conversation_ids:
             replies = _descargar_replies(cliente, conv_id, query, fecha_descarga, tweepy)
             tweets.extend(replies)
             total_replies += len(replies)
-        
+
         if total_replies > 0:
-            print(f"   → {total_replies} respuestas encontradas")
+            print(f"   -> {total_replies} replies found")
     
     except tweepy.errors.TweepyException as e:
         estado = f"ERROR_API_{type(e).__name__}"
@@ -352,7 +331,7 @@ def _descargar_tweets_busqueda(cliente, query, fecha_descarga, tweepy):
 
 
 def _descargar_replies(cliente, conversation_id, query_original, fecha_descarga, tweepy):
-    """Descarga las respuestas a un tweet usando su conversation_id."""
+    """Fetches replies to a tweet using its conversation_id."""
     replies = []
     
     try:
@@ -378,36 +357,39 @@ def _descargar_replies(cliente, conversation_id, query_original, fecha_descarga,
             replies.append(_crear_fila_tweet(tweet, "reply", query_original, autor, fecha_descarga, "EXITO"))
     
     except Exception:
-        pass  # Ignoramos errores en replies individuales
-    
+        pass  # Individual reply errors are non-fatal
+
     return replies
 
 
 def _crear_fila_tweet(tweet, source_type, source_query, autor, fecha_descarga, estado):
-    """Crea un diccionario con los datos del tweet (formato compatible con YouTube)."""
+    """
+    Converts a Tweepy tweet object into a flat dict.
+    Schema is intentionally compatible with the YouTube pipeline for cross-platform merging.
+    """
     metrics = tweet.public_metrics or {}
     return {
-        "plataforma": "twitter",  # Para identificar fuente al combinar con YouTube
-        "video_id": source_query,  # Equivale a video_id en YouTube
-        "comment_id": str(tweet.id),  # Equivale a comment_id
-        "parent_id": str(tweet.conversation_id) if tweet.conversation_id else "",  # Equivale a parent_id
+        "plataforma": "twitter",
+        "video_id": source_query,
+        "comment_id": str(tweet.id),
+        "parent_id": str(tweet.conversation_id) if tweet.conversation_id else "",
         "is_reply": 1 if tweet.in_reply_to_user_id else 0,
         "autor": autor,
         "texto": tweet.text.replace('\n', ' ').replace('\r', ' '),
         "likes": metrics.get("like_count", 0),
         "fecha": tweet.created_at.isoformat() if tweet.created_at else "",
         "fecha_descarga": fecha_descarga,
-        "estado_video": estado,  # Equivale a estado_video
+        "estado_video": estado,
     }
 
 
 def _crear_fila_error(source_type, source_query, estado, fecha_descarga):
-    """Crea una fila de error (formato compatible con YouTube)."""
+    """Creates an error row to flag failed downloads in the CSV."""
     return {
         "plataforma": "twitter",
         "video_id": source_query,
         "comment_id": "", "parent_id": "", "is_reply": "",
-        "autor": "", "texto": f"NO SE PUDO DESCARGAR - {estado}",
+        "autor": "", "texto": f"DOWNLOAD FAILED - {estado}",
         "likes": 0, "fecha": "",
         "fecha_descarga": fecha_descarga,
         "estado_video": estado,
@@ -415,7 +397,7 @@ def _crear_fila_error(source_type, source_query, estado, fecha_descarga):
 
 
 def _guardar_csv_scrapping(datos, archivo):
-    """Guarda los tweets en CSV (formato compatible con YouTube)."""
+    """Saves tweets to a semicolon-delimited CSV (schema compatible with YouTube pipeline)."""
     campos = [
         "plataforma",
         "video_id",
@@ -445,72 +427,66 @@ def ejecutar_preprocesamiento():
     spacy = importar_spacy()
     
     print("\n" + "="*60)
-    print("PASO 2: PREPROCESAMIENTO DE TWEETS")
+    print("STEP 2: PREPROCESSING")
     print("="*60)
-    
-    # Verificar archivo de entrada
+
     if not Path(Config.ARCHIVO_SCRAPPING).exists():
-        print(f"\n⚠️  ERROR: No existe el archivo {Config.ARCHIVO_SCRAPPING}")
-        print("   Ejecuta primero: python pipeline_tweets_X.py --paso scrapping")
+        print(f"\nERROR: {Config.ARCHIVO_SCRAPPING} not found.")
+        print("   Run first: python pipeline_tweets_X.py --paso scrapping")
         return False
-    
-    # Cargar datos
-    print(f"\n📂 Cargando {Config.ARCHIVO_SCRAPPING}...")
+
+    print(f"\nLoading {Config.ARCHIVO_SCRAPPING}...")
     df = pd.read_csv(Config.ARCHIVO_SCRAPPING, sep=";", engine="python")
-    print(f"   → {len(df)} filas cargadas")
-    
-    # Filtrar solo exitosos
+    print(f"   -> {len(df)} rows loaded")
+
     df = df[df["estado_video"] == "EXITO"].copy()
     df = df.dropna(subset=["texto"]).reset_index(drop=True)
-    print(f"   → {len(df)} tweets válidos")
-    
-    # === PREPROCESAMIENTO PARA COOCURRENCIAS ===
-    print("\n🔧 Preprocesando para coocurrencias...")
+    print(f"   -> {len(df)} valid tweets")
+
+    # Branch 1: preprocessing for co-occurrence analysis (aggressive cleaning)
+    print("\nPreprocessing for co-occurrences...")
     df_cooc = df.copy()
     df_cooc["clean"] = df_cooc["texto"].apply(_limpiar_texto_coocurrencias)
     df_cooc["lang"] = df_cooc["clean"].apply(lambda x: _detectar_idioma(x, detect, LangDetectException))
-    
+
     antes = len(df_cooc)
     df_cooc = df_cooc[df_cooc["lang"] == Config.IDIOMA_OBJETIVO].reset_index(drop=True)
-    print(f"   → {len(df_cooc)} tweets en español (descartados {antes - len(df_cooc)})")
-    
-    # Procesar con spaCy
-    print("   → Tokenizando con spaCy...")
+    print(f"   -> {len(df_cooc)} Spanish tweets (dropped {antes - len(df_cooc)})")
+
+    print("   -> Tokenizing with spaCy...")
     df_cooc = _procesar_con_spacy(df_cooc, spacy)
-    
-    # Guardar
+
     cols_cooc = ["texto", "clean", "lang", "tokens_str", "lemmas_str", "tokens_no_stop_str"]
     df_cooc[cols_cooc].to_csv(Config.ARCHIVO_PREPROCESADO_COOC, sep=";", index=False, encoding="utf-8")
-    print(f"   ✅ Guardado: {Config.ARCHIVO_PREPROCESADO_COOC}")
-    
-    # === PREPROCESAMIENTO PARA EMBEDDINGS ===
-    print("\n🔧 Preprocesando para embeddings...")
+    print(f"   Saved: {Config.ARCHIVO_PREPROCESADO_COOC}")
+
+    # Branch 2: preprocessing for embeddings (light cleaning — keeps punctuation and emoji)
+    print("\nPreprocessing for embeddings...")
     df_emb = df.copy()
     df_emb["texto_clean"] = df_emb["texto"].apply(_limpiar_texto_embeddings)
     df_emb = df_emb[df_emb["texto_clean"].str.strip() != ""].copy()
-    
+
     df_emb["n_chars"] = df_emb["texto_clean"].str.len()
     df_emb["n_words"] = df_emb["texto_clean"].str.split().apply(len)
     df_emb = df_emb[(df_emb["n_chars"] >= Config.MIN_CHAR_LEN) & (df_emb["n_words"] >= Config.MIN_WORDS)].copy()
-    
+
     if Config.USAR_FILTRO_IDIOMA:
         df_emb["lang"] = df_emb["texto_clean"].apply(lambda x: _detectar_idioma(x, detect, LangDetectException))
         df_emb = df_emb[df_emb["lang"] == Config.IDIOMA_OBJETIVO].reset_index(drop=True)
-    
-    print(f"   → {len(df_emb)} tweets listos para embeddings")
-    
-    # Guardar
+
+    print(f"   -> {len(df_emb)} tweets ready for embedding")
+
     cols_emb = ["video_id", "comment_id", "parent_id", "is_reply", "autor", "likes", "fecha",
                 "texto", "texto_clean", "n_chars", "n_words", "lang"]
     cols_presentes = [c for c in cols_emb if c in df_emb.columns]
     df_emb[cols_presentes].to_csv(Config.ARCHIVO_PREPROCESADO_EMB, sep=";", index=False, encoding="utf-8")
-    print(f"   ✅ Guardado: {Config.ARCHIVO_PREPROCESADO_EMB}")
-    
+    print(f"   Saved: {Config.ARCHIVO_PREPROCESADO_EMB}")
+
     return True
 
 
 def _limpiar_texto_coocurrencias(text):
-    """Limpieza agresiva para coocurrencias."""
+    """Aggressive cleaning for co-occurrence analysis: remove mentions, hashtags, RTs, symbols."""
     if not isinstance(text, str):
         text = str(text)
     text = text.lower()
@@ -539,7 +515,7 @@ def _limpiar_texto_embeddings(text):
 
 
 def _detectar_idioma(text, detect, LangDetectException):
-    """Detecta el idioma del texto."""
+    """Detects language; returns 'unknown' for short or unparseable input."""
     if not isinstance(text, str) or len(text.strip()) < 3:
         return "unknown"
     try:
@@ -549,7 +525,7 @@ def _detectar_idioma(text, detect, LangDetectException):
 
 
 def _procesar_con_spacy(df, spacy):
-    """Tokeniza y lematiza con spaCy."""
+    """Tokenizes and lemmatizes the 'clean' column using spaCy (es_core_news_sm)."""
     nlp = spacy.load("es_core_news_sm")
     
     tokens_list, lemmas_list, tokens_no_stop_list = [], [], []
@@ -575,42 +551,41 @@ def _procesar_con_spacy(df, spacy):
     return df
 
 
-# ==================== PASO 3: COOCURRENCIAS ====================
+# === STEP 3: CO-OCCURRENCE ANALYSIS ===
 
 def ejecutar_coocurrencias():
-    """Calcula coocurrencias de palabras clave."""
+    """Calculates co-occurrence frequencies for the keywords defined in Config."""
     pd = importar_pandas()
-    
+
     print("\n" + "="*60)
-    print("PASO 3: ANÁLISIS DE COOCURRENCIAS")
+    print("STEP 3: CO-OCCURRENCE ANALYSIS")
     print("="*60)
-    
+
     if not Path(Config.ARCHIVO_PREPROCESADO_COOC).exists():
-        print(f"\n⚠️  ERROR: No existe {Config.ARCHIVO_PREPROCESADO_COOC}")
-        print("   Ejecuta primero: python pipeline_tweets_X.py --paso preprocesar")
+        print(f"\nERROR: {Config.ARCHIVO_PREPROCESADO_COOC} not found.")
+        print("   Run first: python pipeline_tweets_X.py --paso preprocesar")
         return False
-    
-    print(f"\n📂 Cargando {Config.ARCHIVO_PREPROCESADO_COOC}...")
+
+    print(f"\nLoading {Config.ARCHIVO_PREPROCESADO_COOC}...")
     df = pd.read_csv(Config.ARCHIVO_PREPROCESADO_COOC, sep=";")
     df["tokens_no_stop_str"] = df["tokens_no_stop_str"].fillna("")
-    print(f"   → {len(df)} tweets cargados")
-    
-    print("\n🔗 Calculando coocurrencias...")
+    print(f"   -> {len(df)} tweets loaded")
+
+    print("\nCalculating co-occurrences...")
     cooc_dict = {kw: Counter() for kw in Config.KEYWORDS}
-    
+
     for tokens_str in df["tokens_no_stop_str"]:
         tokens = str(tokens_str).split()
         if not tokens:
             continue
         token_set = set(tokens)
-        
+
         for kw in Config.KEYWORDS:
             if kw in token_set:
                 for tok in tokens:
                     if tok != kw:
                         cooc_dict[kw][tok] += 1
-    
-    # Construir DataFrame
+
     rows = []
     for kw, counter in cooc_dict.items():
         total = sum(counter.values())
@@ -628,8 +603,8 @@ def ejecutar_coocurrencias():
     
     print(f"   ✅ Guardado: {Config.ARCHIVO_COOCURRENCIAS}")
     
-    # Mostrar resultados
-    print("\n📊 TOP COOCURRENCIAS:")
+    # Print top results per keyword
+    print("\nTOP CO-OCCURRENCES:")
     for kw in Config.KEYWORDS:
         sub = cooc_df[cooc_df["keyword"] == kw].head(Config.TOP_N_COOC)
         if sub.empty:
@@ -637,38 +612,39 @@ def ejecutar_coocurrencias():
         print(f"\n   '{kw}':")
         for _, row in sub.head(5).iterrows():
             print(f"      {row['token']:<15} freq={row['cooc_freq']:<4} rel={row['cooc_rel']:.3f}")
-    
+
     return True
 
 
-# ==================== PASO 4: EMBEDDINGS ====================
+# === STEP 4: EMBEDDINGS ===
 
 def ejecutar_embeddings():
-    """Genera embeddings con sentence-transformers."""
+    """Generates sentence embeddings using sentence-transformers."""
     pd = importar_pandas()
     np = importar_numpy()
     SentenceTransformer = importar_sentence_transformers()
-    
+
     print("\n" + "="*60)
-    print("PASO 4: GENERACIÓN DE EMBEDDINGS")
+    print("STEP 4: EMBEDDINGS")
     print("="*60)
-    
+
     if not Path(Config.ARCHIVO_PREPROCESADO_EMB).exists():
-        print(f"\n⚠️  ERROR: No existe {Config.ARCHIVO_PREPROCESADO_EMB}")
-        print("   Ejecuta primero: python pipeline_tweets_X.py --paso preprocesar")
+        print(f"\nERROR: {Config.ARCHIVO_PREPROCESADO_EMB} not found.")
+        print("   Run first: python pipeline_tweets_X.py --paso preprocesar")
         return False
-    
-    print(f"\n📂 Cargando {Config.ARCHIVO_PREPROCESADO_EMB}...")
+
+    print(f"\nLoading {Config.ARCHIVO_PREPROCESADO_EMB}...")
     df = pd.read_csv(Config.ARCHIVO_PREPROCESADO_EMB, sep=";", engine="python")
     df = df.dropna(subset=["texto_clean"]).reset_index(drop=True)
-    print(f"   → {len(df)} tweets cargados")
-    
-    print(f"\n🧠 Cargando modelo: {Config.MODEL_NAME}")
-    print("   (puede tardar en la primera ejecución)")
+    print(f"   -> {len(df)} tweets loaded")
+
+    print(f"\nLoading model: {Config.MODEL_NAME}")
+    print("   (first run will download from HuggingFace)")
     model = SentenceTransformer(Config.MODEL_NAME)
-    
-    print(f"\n⚡ Generando embeddings para {len(df)} tweets...")
+
+    print(f"\nGenerating embeddings for {len(df)} tweets...")
     textos = df["texto_clean"].tolist()
+    # I normalize to unit norm so cosine similarity reduces to dot product
     embeddings = model.encode(
         textos,
         batch_size=64,
@@ -676,76 +652,74 @@ def ejecutar_embeddings():
         convert_to_numpy=True,
         normalize_embeddings=True
     )
-    
-    print(f"   → Shape: {embeddings.shape}")
-    
-    # Guardar embeddings
+
+    print(f"   -> Shape: {embeddings.shape}")
+
     np.save(Config.ARCHIVO_EMBEDDINGS, embeddings)
-    print(f"   ✅ Guardado: {Config.ARCHIVO_EMBEDDINGS}")
-    
-    # Guardar índice
+    print(f"   Saved: {Config.ARCHIVO_EMBEDDINGS}")
+
     df.insert(0, "embedding_idx", range(len(df)))
     df.to_csv(Config.ARCHIVO_INDEX_EMB, sep=";", index=False, encoding="utf-8")
-    print(f"   ✅ Guardado: {Config.ARCHIVO_INDEX_EMB}")
-    
+    print(f"   Saved: {Config.ARCHIVO_INDEX_EMB}")
+
     return True
 
 
-# ==================== EJECUCIÓN COMPLETA ====================
+# === FULL PIPELINE ===
 
 def ejecutar_todo():
-    """Ejecuta todo el pipeline."""
+    """Runs all four steps end-to-end."""
     print("\n" + "="*60)
-    print("PIPELINE COMPLETO DE OPINION MINING")
+    print("FULL OPINION MINING PIPELINE")
     print("="*60)
-    
+
     pasos = [
-        ("Scrapping", ejecutar_scrapping),
-        ("Preprocesamiento", ejecutar_preprocesamiento),
-        ("Coocurrencias", ejecutar_coocurrencias),
+        ("Scraping", ejecutar_scrapping),
+        ("Preprocessing", ejecutar_preprocesamiento),
+        ("Co-occurrences", ejecutar_coocurrencias),
         ("Embeddings", ejecutar_embeddings),
     ]
     
     for nombre, funcion in pasos:
         if not funcion():
-            print(f"\n❌ El pipeline se detuvo en: {nombre}")
+            print(f"\nPipeline stopped at: {nombre}")
             return False
-    
+
     print("\n" + "="*60)
-    print("✅ PIPELINE COMPLETADO EXITOSAMENTE")
+    print("PIPELINE COMPLETED")
     print("="*60)
-    print("\nArchivos generados:")
-    print(f"  📄 {Config.ARCHIVO_SCRAPPING}")
-    print(f"  📄 {Config.ARCHIVO_PREPROCESADO_COOC}")
-    print(f"  📄 {Config.ARCHIVO_PREPROCESADO_EMB}")
-    print(f"  📄 {Config.ARCHIVO_COOCURRENCIAS}")
-    print(f"  📄 {Config.ARCHIVO_EMBEDDINGS}")
-    print(f"  📄 {Config.ARCHIVO_INDEX_EMB}")
-    
+    print("\nOutput files:")
+    print(f"  {Config.ARCHIVO_SCRAPPING}")
+    print(f"  {Config.ARCHIVO_PREPROCESADO_COOC}")
+    print(f"  {Config.ARCHIVO_PREPROCESADO_EMB}")
+    print(f"  {Config.ARCHIVO_COOCURRENCIAS}")
+    print(f"  {Config.ARCHIVO_EMBEDDINGS}")
+    print(f"  {Config.ARCHIVO_INDEX_EMB}")
+
     return True
 
 
-# ==================== MAIN ====================
+# === ENTRY POINT ===
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Pipeline de Opinion Mining para tweets de X",
+        description="Opinion mining pipeline for X/Twitter",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
-Ejemplos:
-  python pipeline_tweets_X.py --paso scrapping     # Descargar tweets
-  python pipeline_tweets_X.py --paso preprocesar   # Limpiar texto
-  python pipeline_tweets_X.py --paso coocurrencias # Analizar coocurrencias
-  python pipeline_tweets_X.py --paso embeddings    # Generar embeddings
-  python pipeline_tweets_X.py --paso todo          # Ejecutar todo
+Examples:
+  python pipeline_tweets_X.py --paso scrapping      # download tweets
+  python pipeline_tweets_X.py --paso preprocesar    # clean text
+  python pipeline_tweets_X.py --paso coocurrencias  # co-occurrence analysis
+  python pipeline_tweets_X.py --paso embeddings     # generate embeddings
+  python pipeline_tweets_X.py --paso todo           # run full pipeline
         """
     )
-    
+
     parser.add_argument(
         "--paso", "-p",
         choices=["scrapping", "preprocesar", "coocurrencias", "embeddings", "todo"],
         required=True,
-        help="Paso del pipeline a ejecutar"
+        help="Pipeline step to run"
     )
     
     args = parser.parse_args()
